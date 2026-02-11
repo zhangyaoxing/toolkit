@@ -12,8 +12,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         
         if let button = statusItem?.button {
-            button.title = "🖱️" // 你也可以用 button.image 设置图标
-        }
+        // 使用 SF Symbols 名字
+        let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
+        button.image = NSImage(systemSymbolName: "cursorarrow.click.2", accessibilityDescription: "Mouse Mover")?
+            .withSymbolConfiguration(config)
+    }
 
         // 3. 构建菜单
         setupMenu()
@@ -64,6 +67,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let alert = NSAlert()
         alert.messageText = "MouseMover"
         alert.informativeText = "将鼠标移动到指定屏幕。"
+        alert.icon = statusItem?.button?.image
         alert.runModal()
     }
 }
