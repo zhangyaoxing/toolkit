@@ -13,4 +13,8 @@ cp .build/release/toolkit MouseMover.app/Contents/MacOS/
 # 4. 拷贝 Info.plist
 cp Info.plist MouseMover.app/Contents/
 
+chmod +x MouseMover.app/Contents/MacOS/toolkit
+xattr -cr MouseMover.app
+codesign --force --deep --sign - MouseMover.app
+
 echo "打包完成！MouseMover.app 已生成。"
