@@ -70,6 +70,46 @@ class CursorMover {
         return NSScreen.screens.first { NSMouseInRect(mouseLocation, $0.frame, false) }
     }
 
+    static func smoothMove(
+        to targetPoint: CGPoint, duration: TimeInterval = 0.15,
+        completion: @escaping @Sendable () -> Void = {}
+    ) {
+        let startPoint = NSEvent.mouseLocation
+        // NSEvent.mouseLocation is in screen coordinates (bottom-left origin)
+        // CGWarpMouseCursorPosition uses display coordinates (top-left origin usually, but let's check mapping)
+        // Actually CGWarpMouseCursorPosition uses global display coordinates where (0,0) is top-left of main screen.
+        // NSEvent.mouseLocation (0,0) is bottom-left of zero-screen.
+
+        // Let's stick to converting everything to the CGWarpMouseCursorPosition coordinate system (Top-Left origin) for the interpolation
+
+        guard let mainScreenHeight = NSScreen.screens.first?.frame.height else { return }
+
+        let startWebPos = CGPoint(x: startPoint.x, y: mainScreenHeight - startPoint.y)
+        // targetPoint passed in here is expected to be in CG coordinates (Top-Left 0,0) as it was used in AppDelegate for CGWarpMouseCursorPosition
+
+        let startTime = Date()
+
+        // Use a timer for animation
+        Timer.scheduledTimer(withTimeInterval: 0.016, repeats: true) { timer in
+            let elapsed = Date().timeIntervalSince(startTime)
+            if elapsed >= duration {
+                CGWarpMouseCursorPosition(targetPoint)
+                timer.invalidate()
+                completion()
+                return
+            }
+
+            // Ease out cubic
+            let t = CGFloat(elapsed / duration)
+            let easeT = 1 - pow(1 - t, 3)
+
+            let currentX = startWebPos.x + (targetPoint.x - startWebPos.x) * easeT
+            let currentY = startWebPos.y + (targetPoint.y - startWebPos.y) * easeT
+
+            CGWarpMouseCursorPosition(CGPoint(x: currentX, y: currentY))
+        }
+    }
+
     static func focusWindowAtCursor() {
         // 1. 获取当前鼠标位置 (CG 坐标系)
         let mouseLocation = NSEvent.mouseLocation

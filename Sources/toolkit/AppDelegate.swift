@@ -69,12 +69,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 (NSScreen.screens.first?.frame.height ?? 0)
                 - (frame.origin.y + (frame.size.height / 2))
 
-            CGWarpMouseCursorPosition(CGPoint(x: centerX, y: centerY))
+            // 使用平滑移动
+            let targetPoint = CGPoint(x: centerX, y: centerY)
+            // Pre-calculate for the completion handler to avoid capturing 'screens' which is non-Sendable
+            let highlightPoint = CGPoint(x: centerX, y: screens[0].frame.height - centerY)
 
-            // 转换坐标系供 NSPanel 使用 (NSPanel 使用左下角原点)
-            let screenPoint = CGPoint(x: centerX, y: screens[0].frame.height - centerY)
-            CursorMover.highlight(at: screenPoint)
-            CursorMover.focusWindowAtCursor()
+            CursorMover.smoothMove(to: targetPoint) {
+                // 移动结束后显示高亮和聚焦
+                Task { @MainActor in
+                    CursorMover.highlight(at: highlightPoint)
+                    CursorMover.focusWindowAtCursor()
+                }
+            }
         } else {
             // 鼠标移动到新屏幕上同样位置 (保持相对比例)
             if let sourceScreen = CursorMover.currentScreen {
@@ -89,14 +95,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 let newX = frame.origin.x + (frame.width * relativeX)
                 let newY = frame.origin.y + (frame.height * relativeY)
 
-                // 转换 Y 坐标用于 CGWarpMouseCursorPosition (top-left origin)
+                // 转换 Y 坐标用于 smoothMove (top-left origin)
                 let mainScreenHeight = NSScreen.screens.first?.frame.height ?? 0
                 let warpY = mainScreenHeight - newY
 
-                CGWarpMouseCursorPosition(CGPoint(x: newX, y: warpY))
+                let targetPoint = CGPoint(x: newX, y: warpY)
+                let highlightPoint = CGPoint(x: newX, y: newY)
 
-                // 高亮 (bottom-left origin)
-                CursorMover.highlight(at: CGPoint(x: newX, y: newY))
+                // 使用平滑移动
+                CursorMover.smoothMove(to: targetPoint) {
+                    Task { @MainActor in
+                        // 高亮 (bottom-left origin)
+                        CursorMover.highlight(at: highlightPoint)
+                    }
+                }
             }
         }
     }
