@@ -93,7 +93,19 @@ class CursorMover {
         Timer.scheduledTimer(withTimeInterval: 0.016, repeats: true) { timer in
             let elapsed = Date().timeIntervalSince(startTime)
             if elapsed >= duration {
+                // Final position update
                 CGWarpMouseCursorPosition(targetPoint)
+
+                // If dragging, post final drag event
+                if NSEvent.pressedMouseButtons & 1 != 0 {
+                    if let event = CGEvent(
+                        mouseEventSource: nil, mouseType: .leftMouseDragged,
+                        mouseCursorPosition: targetPoint, mouseButton: .left)
+                    {
+                        event.post(tap: .cghidEventTap)
+                    }
+                }
+
                 timer.invalidate()
                 completion()
                 return
@@ -105,8 +117,20 @@ class CursorMover {
 
             let currentX = startWebPos.x + (targetPoint.x - startWebPos.x) * easeT
             let currentY = startWebPos.y + (targetPoint.y - startWebPos.y) * easeT
+            let currentPoint = CGPoint(x: currentX, y: currentY)
 
-            CGWarpMouseCursorPosition(CGPoint(x: currentX, y: currentY))
+            // Always warp for visual update (works without Accessibility permissions)
+            CGWarpMouseCursorPosition(currentPoint)
+
+            // If dragging, post drag event (requires Accessibility permissions) to move window
+            if NSEvent.pressedMouseButtons & 1 != 0 {
+                if let event = CGEvent(
+                    mouseEventSource: nil, mouseType: .leftMouseDragged,
+                    mouseCursorPosition: currentPoint, mouseButton: .left)
+                {
+                    event.post(tap: .cghidEventTap)
+                }
+            }
         }
     }
 
