@@ -1,24 +1,26 @@
 {
     "configurations": [
         {
-            "type": "swift",
+            "type": "lldb",
             "request": "launch",
             "args": [],
             "cwd": "${workspaceFolder:toolkit}",
             "name": "Debug toolkit",
             "target": "toolkit",
             "configuration": "debug",
-            "preLaunchTask": "swift: Build Debug toolkit"
+            "preLaunchTask": "swift: Build Debug toolkit",
+            "program": "${workspaceFolder:toolkit}/.build/debug/toolkit"
         },
         {
-            "type": "swift",
+            "type": "lldb",
             "request": "launch",
             "args": [],
             "cwd": "${workspaceFolder:toolkit}",
             "name": "Release toolkit",
             "target": "toolkit",
             "configuration": "release",
-            "preLaunchTask": "swift: Build Release toolkit"
+            "preLaunchTask": "swift: Build Release toolkit",
+            "program": "${workspaceFolder:toolkit}/.build/release/toolkit"
         }
     ]
 }
