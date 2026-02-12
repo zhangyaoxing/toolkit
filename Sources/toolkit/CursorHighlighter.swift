@@ -1,8 +1,8 @@
 import AppKit
 
 @MainActor
-class CursorHighlighter {
-    static func show(at point: CGPoint) {
+class CursorMover {
+    static func highlight(at point: CGPoint) {
         let circleSize: CGFloat = 80
         let borderWidth: CGFloat = 4
         let maxScale: CGFloat = 1.5
@@ -65,6 +65,11 @@ class CursorHighlighter {
         CATransaction.commit()
     }
 
+    static var currentScreen: NSScreen? {
+        let mouseLocation = NSEvent.mouseLocation
+        return NSScreen.screens.first { NSMouseInRect(mouseLocation, $0.frame, false) }
+    }
+
     static func focusWindowAtCursor() {
         // 1. 获取当前鼠标位置 (CG 坐标系)
         let mouseLocation = NSEvent.mouseLocation
@@ -75,14 +80,15 @@ class CursorHighlighter {
         // 2. 获取坐标下的系统 UI 元素
         let systemWideElement = AXUIElementCreateSystemWide()
         var element: AXUIElement?
-        
+
         // 探测该点下的元素
-        let result = AXUIElementCopyElementAtPosition(systemWideElement, Float(mouseLocation.x), Float(point.y), &element)
-        
+        let result = AXUIElementCopyElementAtPosition(
+            systemWideElement, Float(mouseLocation.x), Float(point.y), &element)
+
         if result == .success, let targetElement = element {
             var pid: pid_t = 0
             AXUIElementGetPid(targetElement, &pid)
-            
+
             // 3. 找到对应的应用并激活
             if let app = NSRunningApplication(processIdentifier: pid) {
                 app.activate(options: [.activateIgnoringOtherApps])

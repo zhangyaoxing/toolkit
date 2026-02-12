@@ -15,7 +15,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let button = statusItem?.button {
             // 使用 SF Symbols 名字
             let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
-            button.image = NSImage(systemSymbolName: "cursorarrow.click.2", accessibilityDescription: "Mouse Mover")?
+            button.image = NSImage(
+                systemSymbolName: "cursorarrow.click.2", accessibilityDescription: "Mouse Mover")?
                 .withSymbolConfiguration(config)
         }
 
@@ -31,7 +32,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(NSMenuItem(title: "关于鼠标工具", action: #selector(about), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "退出", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        menu.addItem(
+            NSMenuItem(
+                title: "退出", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
 
         statusItem?.menu = menu
     }
@@ -57,16 +60,45 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func moveCursorToScreen(index: Int) {
         let screens = NSScreen.screens
         guard index < screens.count else { return }
-        let frame = screens[index].frame
-        let centerX = frame.origin.x + (frame.size.width / 2)
-        let centerY = (NSScreen.screens.first?.frame.height ?? 0) - (frame.origin.y + (frame.size.height / 2))
-        CGWarpMouseCursorPosition(CGPoint(x: centerX, y: centerY))
-        // 转换坐标系供 NSPanel 使用 (NSPanel 使用左下角原点)
-        let screenPoint = CGPoint(x: centerX, y: screens[0].frame.height - centerY)
+        let targetScreen = screens[index]
+        let frame = targetScreen.frame
 
-        // 显示高亮
-        CursorHighlighter.show(at: screenPoint)
-        CursorHighlighter.focusWindowAtCursor()
+        if NSEvent.pressedMouseButtons == 0 {
+            let centerX = frame.origin.x + (frame.size.width / 2)
+            let centerY =
+                (NSScreen.screens.first?.frame.height ?? 0)
+                - (frame.origin.y + (frame.size.height / 2))
+
+            CGWarpMouseCursorPosition(CGPoint(x: centerX, y: centerY))
+
+            // 转换坐标系供 NSPanel 使用 (NSPanel 使用左下角原点)
+            let screenPoint = CGPoint(x: centerX, y: screens[0].frame.height - centerY)
+            CursorMover.highlight(at: screenPoint)
+            CursorMover.focusWindowAtCursor()
+        } else {
+            // 鼠标移动到新屏幕上同样位置 (保持相对比例)
+            if let sourceScreen = CursorMover.currentScreen {
+                let mouseLoc = NSEvent.mouseLocation
+                let sourceFrame = sourceScreen.frame
+
+                // 计算相对位置 (0.0 - 1.0)
+                let relativeX = (mouseLoc.x - sourceFrame.origin.x) / sourceFrame.width
+                let relativeY = (mouseLoc.y - sourceFrame.origin.y) / sourceFrame.height
+
+                // 目标屏幕上的位置
+                let newX = frame.origin.x + (frame.width * relativeX)
+                let newY = frame.origin.y + (frame.height * relativeY)
+
+                // 转换 Y 坐标用于 CGWarpMouseCursorPosition (top-left origin)
+                let mainScreenHeight = NSScreen.screens.first?.frame.height ?? 0
+                let warpY = mainScreenHeight - newY
+
+                CGWarpMouseCursorPosition(CGPoint(x: newX, y: warpY))
+
+                // 高亮 (bottom-left origin)
+                CursorMover.highlight(at: CGPoint(x: newX, y: newY))
+            }
+        }
     }
 
     @objc func about() {
