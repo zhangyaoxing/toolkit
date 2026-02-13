@@ -366,7 +366,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let alert = NSAlert()
         alert.messageText = "MouseMover"
         alert.informativeText = "Move mouse to specified screen."
-        alert.icon = statusItem?.button?.image
+        alert.icon = NSApp.applicationIconImage
         alert.runModal()
     }
 }
