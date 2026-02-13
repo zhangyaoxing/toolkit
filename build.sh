@@ -18,3 +18,6 @@ xattr -cr MouseMover.app
 codesign --force --deep --sign - MouseMover.app
 
 echo "Build complete! MouseMover.app has been generated."
+
+echo "Installing MouseMover.app to /Applications..."
+sudo cp -R MouseMover.app /Applications/MouseMover.app

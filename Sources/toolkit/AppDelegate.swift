@@ -243,15 +243,111 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let targetWindow = windows.first!
         print("[DEBUG] Found \(windows.count) windows, using first one")
         
-        // Calculate new window position (center on target screen)
-        let screenFrame = targetScreen.visibleFrame
+        // Get current window position and size
+        var positionRef: CFTypeRef?
+        var sizeRef: CFTypeRef?
         
-        // Set window position to screen visible area
-        var newPosition = CGPoint(x: screenFrame.origin.x, y: screenFrame.origin.y)
+        AXUIElementCopyAttributeValue(targetWindow, kAXPositionAttribute as CFString, &positionRef)
+        AXUIElementCopyAttributeValue(targetWindow, kAXSizeAttribute as CFString, &sizeRef)
+        
+        var currentPosition = CGPoint.zero
+        var currentSize = CGSize.zero
+        
+        if let posValue = positionRef {
+            AXValueGetValue(posValue as! AXValue, .cgPoint, &currentPosition)
+        }
+        if let szValue = sizeRef {
+            AXValueGetValue(szValue as! AXValue, .cgSize, &currentSize)
+        }
+        
+        print("[DEBUG] Current window position: \(currentPosition), size: \(currentSize)")
+        
+        // Convert window position from top-left origin (Accessibility API) to bottom-left origin (NSScreen.frame)
+        let mainScreenHeight = NSScreen.screens.first?.frame.height ?? 0
+        let windowPositionBottomLeft = CGPoint(
+            x: currentPosition.x,
+            y: mainScreenHeight - currentPosition.y - currentSize.height
+        )
+        
+        print("[DEBUG] Window position (bottom-left origin): \(windowPositionBottomLeft)")
+        
+        // Find current screen containing the window
+        let windowCenter = CGPoint(
+            x: windowPositionBottomLeft.x + currentSize.width / 2,
+            y: windowPositionBottomLeft.y + currentSize.height / 2
+        )
+        
+        guard let currentScreen = NSScreen.screens.first(where: { screen in
+            let frame = screen.frame
+            return windowCenter.x >= frame.minX && windowCenter.x <= frame.maxX &&
+                   windowCenter.y >= frame.minY && windowCenter.y <= frame.maxY
+        }) else {
+            print("[ERROR] Could not determine current screen")
+            return
+        }
+        
+        print("[DEBUG] Current screen: \(currentScreen.displayName)")
+        
+        // Calculate relative position on current screen (0.0 - 1.0)
+        // Use frame (not visibleFrame) to match cursor movement logic
+        let currentFrame = currentScreen.frame
+        let relativeX = (windowPositionBottomLeft.x - currentFrame.origin.x) / currentFrame.width
+        let relativeY = (windowPositionBottomLeft.y - currentFrame.origin.y) / currentFrame.height
+        
+        print("[DEBUG] Relative position: (\(relativeX), \(relativeY)), current size: (\(currentSize.width), \(currentSize.height))")
+        
+        // Keep original window size, only adjust if it exceeds target screen visible area
+        let targetFrame = targetScreen.frame
+        let targetVisibleFrame = targetScreen.visibleFrame
+        let finalWidth = min(currentSize.width, targetVisibleFrame.width)
+        let finalHeight = min(currentSize.height, targetVisibleFrame.height)
+        
+        // Position on target screen (same logic as cursor movement)
+        var newX = targetFrame.origin.x + (targetFrame.width * relativeX)
+        var newY = targetFrame.origin.y + (targetFrame.height * relativeY)
+        
+        // Ensure window is within visible bounds (not under menu bar or dock)
+        newX = max(targetVisibleFrame.origin.x, min(newX, targetVisibleFrame.origin.x + targetVisibleFrame.width - finalWidth))
+        newY = max(targetVisibleFrame.origin.y, min(newY, targetVisibleFrame.origin.y + targetVisibleFrame.height - finalHeight))
+        
+        print("[DEBUG] New position (bottom-left origin): (\(newX), \(newY)), size: (\(finalWidth), \(finalHeight))")
+        
+        // Convert back to top-left origin for Accessibility API
+        let finalX = newX
+        let finalY = mainScreenHeight - newY - finalHeight
+        
+        print("[DEBUG] New position (top-left origin): (\(finalX), \(finalY))")
+        
+        // Set window position to new location
+        var newPosition = CGPoint(x: finalX, y: finalY)
         let positionValue = AXValueCreate(.cgPoint, &newPosition)!
         let posResult = AXUIElementSetAttributeValue(targetWindow, kAXPositionAttribute as CFString, positionValue)
-        print("[DEBUG] Set position to \(newPosition), result: \(posResult.rawValue)")
+        print("[DEBUG] Set position result: \(posResult.rawValue)")
         
+        // Set window size
+        var newSize = CGSize(width: finalWidth, height: finalHeight)
+        let sizeValue = AXValueCreate(.cgSize, &newSize)!
+        let sizeResult = AXUIElementSetAttributeValue(targetWindow, kAXSizeAttribute as CFString, sizeValue)
+        print("[DEBUG] Set size result: \(sizeResult.rawValue)")
+        
+        // Move cursor to window center after moving window
+        // Note: finalX, finalY are in top-left origin (Accessibility API coordinates)
+        let windowCenterX = finalX + finalWidth / 2
+        let windowCenterY = finalY + finalHeight / 2
+        
+        let targetPoint = CGPoint(x: windowCenterX, y: windowCenterY)
+        
+        // For highlight, need to convert to bottom-left origin
+        let highlightPoint = CGPoint(x: windowCenterX, y: mainScreenHeight - windowCenterY)
+        
+        print("[DEBUG] Moving cursor to window center (top-left): (\(windowCenterX), \(windowCenterY))")
+        
+        CursorMover.smoothMove(to: targetPoint) {
+            Task { @MainActor in
+                CursorMover.highlight(at: highlightPoint)
+                CursorMover.focusWindowAtCursor()
+            }
+        }
     }
 
     @objc func showPreferences() {
