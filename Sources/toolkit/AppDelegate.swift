@@ -7,6 +7,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem?
     // 保持 HotKey 对象的引用，否则会被销毁
     var hotKeys: [HotKey] = []
+    var preferencesWindowController: PreferencesWindowController?
+    var screenToDisplayIDMap: [Int: CGDirectDisplayID] = [:]
+    
+    // 按键映射
+    let keyMapping: [Key] = [
+        .one, .two, .three, .four, .five, .six, .seven, .eight, .nine, .zero,
+        .a, .b, .c, .d, .e, .f, .g, .h, .i, .j, .k, .l, .m, .n, .o, .p, .q, .r, .s, .t, .u, .v, .w, .x, .y, .z
+    ]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 2. 初始化状态栏
@@ -25,11 +33,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 4. 设置快捷键 (复用你之前的逻辑)
         setupHotKeys()
+        
+        // 5. 监听配置更新
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(reloadHotKeys),
+            name: NSNotification.Name("ReloadHotKeys"),
+            object: nil
+        )
     }
 
     func setupMenu() {
         let menu = NSMenu()
 
+        menu.addItem(NSMenuItem(title: "选项...", action: #selector(showPreferences), keyEquivalent: ","))
+        menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "关于鼠标工具", action: #selector(about), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(
@@ -40,27 +58,59 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func setupHotKeys() {
-        let hk1 = HotKey(key: .one, modifiers: [.command, .shift])
-        let hk2 = HotKey(key: .two, modifiers: [.command, .shift])
-        let hk3 = HotKey(key: .three, modifiers: [.command, .shift])
-        hk1.keyDownHandler = { [weak self] in
-            self?.moveCursorToScreen(index: 0)
+        // 清除现有快捷键
+        hotKeys.removeAll()
+        screenToDisplayIDMap.removeAll()
+        
+        // 从配置加载
+        if let savedData = UserDefaults.standard.data(forKey: "ScreenHotKeyConfigs"),
+           let configs = try? JSONDecoder().decode([ScreenHotKeyConfig].self, from: savedData) {
+            
+            for (index, config) in configs.enumerated() {
+                guard config.keyCode < keyMapping.count else { continue }
+                
+                let key = keyMapping[config.keyCode]
+                var modifiers: NSEvent.ModifierFlags = []
+                
+                let savedModifiers = NSEvent.ModifierFlags(rawValue: UInt(config.modifiers))
+                if savedModifiers.contains(.command) { modifiers.insert(.command) }
+                if savedModifiers.contains(.shift) { modifiers.insert(.shift) }
+                if savedModifiers.contains(.option) { modifiers.insert(.option) }
+                if savedModifiers.contains(.control) { modifiers.insert(.control) }
+                
+                let hotKey = HotKey(key: key, modifiers: modifiers)
+                hotKey.keyDownHandler = { [weak self] in
+                    self?.moveCursorToDisplay(displayID: config.displayID)
+                }
+                hotKeys.append(hotKey)
+                screenToDisplayIDMap[index] = config.displayID
+            }
+        } else {
+            // 默认配置（兼容旧版本）
+            let defaultConfigs: [(Key, NSEvent.ModifierFlags, Int)] = [
+                (.one, [.command, .shift], 0),
+                (.two, [.command, .shift], 1),
+                (.three, [.command, .shift], 2)
+            ]
+            
+            let screens = NSScreen.screens
+            for (key, modifiers, index) in defaultConfigs {
+                guard index < screens.count else { continue }
+                
+                let hotKey = HotKey(key: key, modifiers: modifiers)
+                let displayID = screens[index].displayID
+                hotKey.keyDownHandler = { [weak self] in
+                    self?.moveCursorToDisplay(displayID: displayID)
+                }
+                hotKeys.append(hotKey)
+                screenToDisplayIDMap[index] = displayID
+            }
         }
-        hk2.keyDownHandler = { [weak self] in
-            self?.moveCursorToScreen(index: 1)
-        }
-        hk3.keyDownHandler = { [weak self] in
-            self?.moveCursorToScreen(index: 2)
-        }
-        hotKeys.append(hk1)
-        hotKeys.append(hk2)
-        hotKeys.append(hk3)
     }
 
-    func moveCursorToScreen(index: Int) {
+    func moveCursorToDisplay(displayID: CGDirectDisplayID) {
         let screens = NSScreen.screens
-        guard index < screens.count else { return }
-        let targetScreen = screens[index]
+        guard let targetScreen = screens.first(where: { $0.displayID == displayID }) else { return }
         let frame = targetScreen.frame
 
         if NSEvent.pressedMouseButtons == 0 {
@@ -113,6 +163,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @objc func showPreferences() {
+        if preferencesWindowController == nil {
+            preferencesWindowController = PreferencesWindowController(window: nil)
+        }
+        preferencesWindowController?.showWindow(self)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+    
+    @objc func reloadHotKeys() {
+        setupHotKeys()
+    }
+    
     @objc func about() {
         let alert = NSAlert()
         alert.messageText = "MouseMover"
