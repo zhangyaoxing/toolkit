@@ -324,7 +324,7 @@ class PreferencesWindowController: NSWindowController {
             
             let alert = NSAlert()
             alert.messageText = "保存成功"
-            alert.informativeText = "快捷键配置已保存，将在下次应用启动时生效。\n\n建议现在重启应用以应用新配置。"
+            alert.informativeText = "快捷键配置已保存！"
             alert.alertStyle = .informational
             alert.addButton(withTitle: "确定")
             alert.runModal()
