@@ -263,10 +263,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         print("[DEBUG] Current window position: \(currentPosition), size: \(currentSize)")
         
         // Convert window position from top-left origin (Accessibility API) to bottom-left origin (NSScreen.frame)
-        let mainScreenHeight = NSScreen.screens.first?.frame.height ?? 0
         let windowPositionBottomLeft = CGPoint(
             x: currentPosition.x,
-            y: mainScreenHeight - currentPosition.y - currentSize.height
+            y: (NSScreen.screens.first?.frame.height ?? 0) - currentPosition.y - currentSize.height
         )
         
         print("[DEBUG] Window position (bottom-left origin): \(windowPositionBottomLeft)")
@@ -288,47 +287,118 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         print("[DEBUG] Current screen: \(currentScreen.displayName)")
         
-        // Calculate relative position on current screen (0.0 - 1.0)
-        // Use frame (not visibleFrame) to match cursor movement logic
-        let currentFrame = currentScreen.frame
-        let relativeX = (windowPositionBottomLeft.x - currentFrame.origin.x) / currentFrame.width
-        let relativeY = (windowPositionBottomLeft.y - currentFrame.origin.y) / currentFrame.height
+        // Get main screen height for coordinate conversion (calculate once)
+        let mainScreenHeight = NSScreen.screens.first?.frame.height ?? 0
         
-        print("[DEBUG] Relative position: (\(relativeX), \(relativeY)), current size: (\(currentSize.width), \(currentSize.height))")
+        // Check if window is maximized (size matches visible frame with some tolerance)
+        let currentVisibleFrame = currentScreen.visibleFrame
+        let tolerance: CGFloat = 20.0  // Increased tolerance for better detection
         
-        // Keep original window size, only adjust if it exceeds target screen visible area
+        // Check size match - primary indicator of maximization
+        let widthDiff = abs(currentSize.width - currentVisibleFrame.width)
+        let heightDiff = abs(currentSize.height - currentVisibleFrame.height)
+        let isCurrentlyMaximized = widthDiff < tolerance && heightDiff < tolerance
+        
+        print("[DEBUG] Window size: (\(currentSize.width), \(currentSize.height)), Visible frame size: (\(currentVisibleFrame.width), \(currentVisibleFrame.height))")
+        print("[DEBUG] Width diff: \(widthDiff), Height diff: \(heightDiff)")
+        
         let targetFrame = targetScreen.frame
         let targetVisibleFrame = targetScreen.visibleFrame
-        let finalWidth = min(currentSize.width, targetVisibleFrame.width)
-        let finalHeight = min(currentSize.height, targetVisibleFrame.height)
         
-        // Position on target screen (same logic as cursor movement)
-        var newX = targetFrame.origin.x + (targetFrame.width * relativeX)
-        var newY = targetFrame.origin.y + (targetFrame.height * relativeY)
+        // Check if window would exceed target screen size
+        let wouldExceedTargetScreen = currentSize.width > targetVisibleFrame.width ||
+                                       currentSize.height > targetVisibleFrame.height
         
-        // Ensure window is within visible bounds (not under menu bar or dock)
-        newX = max(targetVisibleFrame.origin.x, min(newX, targetVisibleFrame.origin.x + targetVisibleFrame.width - finalWidth))
-        newY = max(targetVisibleFrame.origin.y, min(newY, targetVisibleFrame.origin.y + targetVisibleFrame.height - finalHeight))
+        // Treat as maximized if: currently maximized OR would exceed target screen
+        let shouldMaximize = isCurrentlyMaximized || wouldExceedTargetScreen
         
-        print("[DEBUG] New position (bottom-left origin): (\(newX), \(newY)), size: (\(finalWidth), \(finalHeight))")
+        print("[DEBUG] Currently maximized: \(isCurrentlyMaximized), Would exceed target: \(wouldExceedTargetScreen), Should maximize: \(shouldMaximize)")
         
-        // Convert back to top-left origin for Accessibility API
-        let finalX = newX
-        let finalY = mainScreenHeight - newY - finalHeight
+        let finalWidth: CGFloat
+        let finalHeight: CGFloat
+        let finalX: CGFloat
+        let finalY: CGFloat
+        
+        if shouldMaximize {
+            // Window is maximized or exceeds target screen, set it to fill target screen's visible frame
+            finalWidth = targetVisibleFrame.width
+            finalHeight = targetVisibleFrame.height
+            
+            // Position at visible frame origin (bottom-left)
+            let newX = targetVisibleFrame.origin.x
+            let newY = targetVisibleFrame.origin.y
+            
+            print("[DEBUG] Maximizing on target screen (bottom-left origin): (\(newX), \(newY)), size: (\(finalWidth), \(finalHeight))")
+            
+            // Convert to top-left origin for Accessibility API
+            finalX = newX
+            finalY = mainScreenHeight - newY - finalHeight
+        } else {
+            // Calculate relative position on current screen (0.0 - 1.0)
+            // Use frame (not visibleFrame) to match cursor movement logic
+            let currentFrame = currentScreen.frame
+            let relativeX = (windowPositionBottomLeft.x - currentFrame.origin.x) / currentFrame.width
+            let relativeY = (windowPositionBottomLeft.y - currentFrame.origin.y) / currentFrame.height
+            
+            print("[DEBUG] Relative position: (\(relativeX), \(relativeY)), current size: (\(currentSize.width), \(currentSize.height))")
+            
+            // Keep original window size (already checked it doesn't exceed target screen)
+            finalWidth = currentSize.width
+            finalHeight = currentSize.height
+            
+            // Position on target screen (same logic as cursor movement)
+            var newX = targetFrame.origin.x + (targetFrame.width * relativeX)
+            var newY = targetFrame.origin.y + (targetFrame.height * relativeY)
+            
+            // Ensure window is within visible bounds (not under menu bar or dock)
+            newX = max(targetVisibleFrame.origin.x, min(newX, targetVisibleFrame.origin.x + targetVisibleFrame.width - finalWidth))
+            newY = max(targetVisibleFrame.origin.y, min(newY, targetVisibleFrame.origin.y + targetVisibleFrame.height - finalHeight))
+            
+            print("[DEBUG] New position (bottom-left origin): (\(newX), \(newY)), size: (\(finalWidth), \(finalHeight))")
+            
+            // Convert back to top-left origin for Accessibility API
+            finalX = newX
+            finalY = mainScreenHeight - newY - finalHeight
+        }
         
         print("[DEBUG] New position (top-left origin): (\(finalX), \(finalY))")
         
-        // Set window position to new location
+        // IMPORTANT: Set size first, then position
+        // This prevents issues where setting size after position causes the window to shift
+        var newSize = CGSize(width: finalWidth, height: finalHeight)
+        let sizeValue = AXValueCreate(.cgSize, &newSize)!
+        let sizeResult = AXUIElementSetAttributeValue(targetWindow, kAXSizeAttribute as CFString, sizeValue)
+        print("[DEBUG] Set size result: \(sizeResult.rawValue)")
+        
+        // Small delay to let size change take effect
+        usleep(20000)  // 20ms
+        
+        // Set window position after size is set
         var newPosition = CGPoint(x: finalX, y: finalY)
         let positionValue = AXValueCreate(.cgPoint, &newPosition)!
         let posResult = AXUIElementSetAttributeValue(targetWindow, kAXPositionAttribute as CFString, positionValue)
         print("[DEBUG] Set position result: \(posResult.rawValue)")
         
-        // Set window size
-        var newSize = CGSize(width: finalWidth, height: finalHeight)
-        let sizeValue = AXValueCreate(.cgSize, &newSize)!
-        let sizeResult = AXUIElementSetAttributeValue(targetWindow, kAXSizeAttribute as CFString, sizeValue)
-        print("[DEBUG] Set size result: \(sizeResult.rawValue)")
+        // For maximized windows, set position and size again to ensure they stick
+        // Some apps (like VSCode) may readjust the window after initial setting
+        if shouldMaximize {
+            usleep(30000)  // 30ms delay
+            
+            // Set size again
+            let sizeValue2 = AXValueCreate(.cgSize, &newSize)!
+            let sizeResult2 = AXUIElementSetAttributeValue(targetWindow, kAXSizeAttribute as CFString, sizeValue2)
+            print("[DEBUG] Re-set size result: \(sizeResult2.rawValue)")
+            
+            usleep(10000)  // 10ms
+            
+            // Set position again
+            let positionValue2 = AXValueCreate(.cgPoint, &newPosition)!
+            let posResult2 = AXUIElementSetAttributeValue(targetWindow, kAXPositionAttribute as CFString, positionValue2)
+            print("[DEBUG] Re-set position result: \(posResult2.rawValue)")
+        }
+        
+        // Give the window system a moment to complete the changes
+        usleep(50000)  // 50ms delay
         
         // Move cursor to window center after moving window
         // Note: finalX, finalY are in top-left origin (Accessibility API coordinates)
