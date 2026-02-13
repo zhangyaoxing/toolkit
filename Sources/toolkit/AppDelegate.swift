@@ -3,38 +3,38 @@ import HotKey
 
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
-    // 1. 定义状态栏条目
+    // 1. Define status bar item
     var statusItem: NSStatusItem?
-    // 保持 HotKey 对象的引用，否则会被销毁
+    // Keep reference to HotKey objects to prevent deallocation
     var hotKeys: [HotKey] = []
     var preferencesWindowController: PreferencesWindowController?
     var screenToDisplayIDMap: [Int: CGDirectDisplayID] = [:]
     
-    // 按键映射
+    // Key mapping
     let keyMapping: [Key] = [
         .one, .two, .three, .four, .five, .six, .seven, .eight, .nine, .zero,
         .a, .b, .c, .d, .e, .f, .g, .h, .i, .j, .k, .l, .m, .n, .o, .p, .q, .r, .s, .t, .u, .v, .w, .x, .y, .z
     ]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // 2. 初始化状态栏
+        // 2. Initialize status bar
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         if let button = statusItem?.button {
-            // 使用 SF Symbols 名字
+            // Use SF Symbols name
             let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
             button.image = NSImage(
                 systemSymbolName: "cursorarrow.click.2", accessibilityDescription: "Mouse Mover")?
                 .withSymbolConfiguration(config)
         }
 
-        // 3. 构建菜单
+        // 3. Build menu
         setupMenu()
 
-        // 4. 设置快捷键 (复用你之前的逻辑)
+        // 4. Setup hotkeys (reuse previous logic)
         setupHotKeys()
         
-        // 5. 监听配置更新
+        // 5. Listen for configuration updates
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(reloadHotKeys),
@@ -46,25 +46,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func setupMenu() {
         let menu = NSMenu()
 
-        menu.addItem(NSMenuItem(title: "选项...", action: #selector(showPreferences), keyEquivalent: ","))
+        menu.addItem(NSMenuItem(title: "Preferences...", action: #selector(showPreferences), keyEquivalent: ","))
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "关于鼠标工具", action: #selector(about), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "About Mouse Tool", action: #selector(about), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(
             NSMenuItem(
-                title: "退出", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+                title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
 
         statusItem?.menu = menu
     }
 
     func setupHotKeys() {
-        // 清除现有快捷键
+        // Clear existing hotkeys
         hotKeys.removeAll()
         screenToDisplayIDMap.removeAll()
         
-        // 从配置加载
+        print("[DEBUG] === Setting up hotkeys ===")
+        let windowMoveModifier = AppPreferences.windowMoveModifier
+        print("[DEBUG] Window move modifier: \(windowMoveModifier)")
+        
+        // Load from configuration
         if let savedData = UserDefaults.standard.data(forKey: "ScreenHotKeyConfigs"),
            let configs = try? JSONDecoder().decode([ScreenHotKeyConfig].self, from: savedData) {
+            
+            print("[DEBUG] Loaded \(configs.count) hotkey configs")
             
             for (index, config) in configs.enumerated() {
                 guard config.keyCode < keyMapping.count else { continue }
@@ -78,15 +84,35 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 if savedModifiers.contains(.option) { modifiers.insert(.option) }
                 if savedModifiers.contains(.control) { modifiers.insert(.control) }
                 
-                let hotKey = HotKey(key: key, modifiers: modifiers)
-                hotKey.keyDownHandler = { [weak self] in
-                    self?.moveCursorToDisplay(displayID: config.displayID)
+                print("[DEBUG] Config \(index): displayID=\(config.displayID), key=\(key), modifiers=\(modifiers)")
+                
+                // Register hotkey for cursor movement
+                let cursorHotKey = HotKey(key: key, modifiers: modifiers)
+                cursorHotKey.keyDownHandler = { [weak self] in
+                    print("[DEBUG] Cursor hotkey triggered for displayID: \(config.displayID)")
+                    self?.moveCursorToDisplay(displayID: config.displayID, moveWindow: false)
                 }
-                hotKeys.append(hotKey)
+                hotKeys.append(cursorHotKey)
+                
+                // Register additional hotkey with window move modifier for window movement
+                if let windowMoveFlag = windowMoveModifier.eventFlag {
+                    var windowModifiers = modifiers
+                    windowModifiers.insert(windowMoveFlag)
+                    
+                    print("[DEBUG] Registering window move hotkey with modifiers: \(windowModifiers)")
+                    
+                    let windowHotKey = HotKey(key: key, modifiers: windowModifiers)
+                    windowHotKey.keyDownHandler = { [weak self] in
+                        print("[DEBUG] Window hotkey triggered for displayID: \(config.displayID)")
+                        self?.moveCursorToDisplay(displayID: config.displayID, moveWindow: true)
+                    }
+                    hotKeys.append(windowHotKey)
+                }
+                
                 screenToDisplayIDMap[index] = config.displayID
             }
         } else {
-            // 默认配置（兼容旧版本）
+            // Default configuration (compatible with old version)
             let defaultConfigs: [(Key, NSEvent.ModifierFlags, Int)] = [
                 (.one, [.command, .shift], 0),
                 (.two, [.command, .shift], 1),
@@ -97,31 +123,47 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             for (key, modifiers, index) in defaultConfigs {
                 guard index < screens.count else { continue }
                 
-                let hotKey = HotKey(key: key, modifiers: modifiers)
                 let displayID = screens[index].displayID
-                hotKey.keyDownHandler = { [weak self] in
-                    self?.moveCursorToDisplay(displayID: displayID)
+                
+                // Register hotkey for cursor movement
+                let cursorHotKey = HotKey(key: key, modifiers: modifiers)
+                cursorHotKey.keyDownHandler = { [weak self] in
+                    self?.moveCursorToDisplay(displayID: displayID, moveWindow: false)
                 }
-                hotKeys.append(hotKey)
+                hotKeys.append(cursorHotKey)
+                
+                // Register additional hotkey with window move modifier for window movement
+                if let windowMoveFlag = windowMoveModifier.eventFlag {
+                    var windowModifiers = modifiers
+                    windowModifiers.insert(windowMoveFlag)
+                    
+                    let windowHotKey = HotKey(key: key, modifiers: windowModifiers)
+                    windowHotKey.keyDownHandler = { [weak self] in
+                        self?.moveCursorToDisplay(displayID: displayID, moveWindow: true)
+                    }
+                    hotKeys.append(windowHotKey)
+                }
+                
                 screenToDisplayIDMap[index] = displayID
             }
         }
     }
 
-    func moveCursorToDisplay(displayID: CGDirectDisplayID) {
+    func moveCursorToDisplay(displayID: CGDirectDisplayID, moveWindow: Bool = false) {
+        print("[DEBUG] === moveCursorToDisplay called, displayID: \(displayID), moveWindow: \(moveWindow) ===")
         let screens = NSScreen.screens
-        guard let targetScreen = screens.first(where: { $0.displayID == displayID }) else { return }
+        guard let targetScreen = screens.first(where: { $0.displayID == displayID }) else { 
+            print("[ERROR] Target screen not found for displayID: \(displayID)")
+            return 
+        }
         let frame = targetScreen.frame
+        print("[DEBUG] Target screen: \(targetScreen.displayName)")
         
-        // 检查是否按下了窗口移动修饰键
-        let windowMoveModifier = AppPreferences.windowMoveModifier
-        if let requiredFlag = windowMoveModifier.eventFlag {
-            let currentFlags = NSEvent.modifierFlags
-            if currentFlags.contains(requiredFlag) && NSEvent.pressedMouseButtons == 0 {
-                // 移动窗口而不是光标
-                moveWindowToScreen(targetScreen)
-                return
-            }
+        // If moveWindow flag is set, move window directly
+        if moveWindow {
+            print("[DEBUG] Moving window to screen: \(targetScreen.displayName)")
+            moveWindowToScreen(targetScreen)
+            return
         }
 
         if NSEvent.pressedMouseButtons == 0 {
@@ -130,43 +172,43 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 (NSScreen.screens.first?.frame.height ?? 0)
                 - (frame.origin.y + (frame.size.height / 2))
 
-            // 使用平滑移动
+            // Use smooth movement
             let targetPoint = CGPoint(x: centerX, y: centerY)
             // Pre-calculate for the completion handler to avoid capturing 'screens' which is non-Sendable
             let highlightPoint = CGPoint(x: centerX, y: screens[0].frame.height - centerY)
 
             CursorMover.smoothMove(to: targetPoint) {
-                // 移动结束后显示高亮和聚焦
+                // Show highlight and focus after movement
                 Task { @MainActor in
                     CursorMover.highlight(at: highlightPoint)
                     CursorMover.focusWindowAtCursor()
                 }
             }
         } else {
-            // 鼠标移动到新屏幕上同样位置 (保持相对比例)
+            // Move cursor to same relative position on new screen (maintain relative proportion)
             if let sourceScreen = CursorMover.currentScreen {
                 let mouseLoc = NSEvent.mouseLocation
                 let sourceFrame = sourceScreen.frame
 
-                // 计算相对位置 (0.0 - 1.0)
+                // Calculate relative position (0.0 - 1.0)
                 let relativeX = (mouseLoc.x - sourceFrame.origin.x) / sourceFrame.width
                 let relativeY = (mouseLoc.y - sourceFrame.origin.y) / sourceFrame.height
 
-                // 目标屏幕上的位置
+                // Position on target screen
                 let newX = frame.origin.x + (frame.width * relativeX)
                 let newY = frame.origin.y + (frame.height * relativeY)
 
-                // 转换 Y 坐标用于 smoothMove (top-left origin)
+                // Convert Y coordinate for smoothMove (top-left origin)
                 let mainScreenHeight = NSScreen.screens.first?.frame.height ?? 0
                 let warpY = mainScreenHeight - newY
 
                 let targetPoint = CGPoint(x: newX, y: warpY)
                 let highlightPoint = CGPoint(x: newX, y: newY)
 
-                // 使用平滑移动
+                // Use smooth movement
                 CursorMover.smoothMove(to: targetPoint) {
                     Task { @MainActor in
-                        // 高亮 (bottom-left origin)
+                        // Highlight (bottom-left origin)
                         CursorMover.highlight(at: highlightPoint)
                     }
                 }
@@ -175,55 +217,41 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func moveWindowToScreen(_ targetScreen: NSScreen) {
-        // 获取当前聚焦的窗口
-        guard let frontmostApp = NSWorkspace.shared.frontmostApplication,
-              let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
+        // Get currently focused window
+        guard let frontmostApp = NSWorkspace.shared.frontmostApplication else {
+            print("[ERROR] No frontmost application found")
             return
         }
         
-        // 找到前台应用的主窗口
-        let ownerPID = frontmostApp.processIdentifier
+        print("[DEBUG] Frontmost app: \(frontmostApp.localizedName ?? "Unknown") (PID: \(frontmostApp.processIdentifier))")
         
-        for windowInfo in windows {
-            guard let windowPID = windowInfo[kCGWindowOwnerPID as String] as? Int32,
-                  windowPID == ownerPID,
-                  let layer = windowInfo[kCGWindowLayer as String] as? Int,
-                  layer == 0, // 普通窗口层
-                  let bounds = windowInfo[kCGWindowBounds as String] as? [String: CGFloat],
-                  let _ = bounds["X"],
-                  let _ = bounds["Y"],
-                  let _ = bounds["Width"],
-                  let _ = bounds["Height"],
-                  let _ = windowInfo[kCGWindowNumber as String] as? CGWindowID else {
-                continue
-            }
-            
-            // 使用 Accessibility API 移动窗口
-            let element = AXUIElementCreateApplication(ownerPID)
-            var windowList: CFTypeRef?
-            
-            guard AXUIElementCopyAttributeValue(element, kAXWindowsAttribute as CFString, &windowList) == .success,
-                  let windows = windowList as? [AXUIElement],
-                  let targetWindow = windows.first else {
-                continue
-            }
-            
-            // 计算新窗口位置（居中到目标屏幕）
-            let screenFrame = targetScreen.visibleFrame
-            
-            // 设置窗口位置为屏幕可见区域
-            var newPosition = CGPoint(x: screenFrame.origin.x, y: screenFrame.origin.y)
-            let positionValue = AXValueCreate(.cgPoint, &newPosition)!
-            AXUIElementSetAttributeValue(targetWindow, kAXPositionAttribute as CFString, positionValue)
-            
-            // 设置窗口大小为屏幕可见区域大小（最大化效果）
-            var newSize = CGSize(width: screenFrame.width, height: screenFrame.height)
-            let sizeValue = AXValueCreate(.cgSize, &newSize)!
-            AXUIElementSetAttributeValue(targetWindow, kAXSizeAttribute as CFString, sizeValue)
-            
-            // 只处理第一个窗口
-            break
+        // Use Accessibility API to get windows
+        let ownerPID = frontmostApp.processIdentifier
+        let element = AXUIElementCreateApplication(ownerPID)
+        var windowList: CFTypeRef?
+        
+        let result = AXUIElementCopyAttributeValue(element, kAXWindowsAttribute as CFString, &windowList)
+        print("[DEBUG] AXUIElementCopyAttributeValue result: \(result.rawValue)")
+        
+        guard result == .success,
+              let windows = windowList as? [AXUIElement],
+              !windows.isEmpty else {
+            print("[ERROR] Failed to get windows. Result: \(result.rawValue), Windows count: \(windowList != nil ? (windowList as? [AXUIElement])?.count ?? 0 : 0)")
+            return
         }
+        
+        let targetWindow = windows.first!
+        print("[DEBUG] Found \(windows.count) windows, using first one")
+        
+        // Calculate new window position (center on target screen)
+        let screenFrame = targetScreen.visibleFrame
+        
+        // Set window position to screen visible area
+        var newPosition = CGPoint(x: screenFrame.origin.x, y: screenFrame.origin.y)
+        let positionValue = AXValueCreate(.cgPoint, &newPosition)!
+        let posResult = AXUIElementSetAttributeValue(targetWindow, kAXPositionAttribute as CFString, positionValue)
+        print("[DEBUG] Set position to \(newPosition), result: \(posResult.rawValue)")
+        
     }
 
     @objc func showPreferences() {
@@ -241,7 +269,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func about() {
         let alert = NSAlert()
         alert.messageText = "MouseMover"
-        alert.informativeText = "将鼠标移动到指定屏幕。"
+        alert.informativeText = "Move mouse to specified screen."
         alert.icon = statusItem?.button?.image
         alert.runModal()
     }

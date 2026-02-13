@@ -8,6 +8,12 @@ class PreferencesWindowController: NSWindowController {
     private var scrollView: NSScrollView!
     private var screenConfigs: [(screen: NSScreen, keyPopUp: NSPopUpButton, modifierCheckboxes: [NSButton])] = []
     private var windowMoveModifierPopUp: NSPopUpButton!
+    private var saveButton: NSButton!
+    private var isDirty: Bool = false {
+        didSet {
+            saveButton?.isEnabled = isDirty
+        }
+    }
     
     override init(window: NSWindow?) {
         let window = NSWindow(
@@ -16,7 +22,7 @@ class PreferencesWindowController: NSWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "显示器快捷键设置"
+        window.title = "Display Hotkey Settings"
         window.center()
         
         super.init(window: window)
@@ -29,7 +35,7 @@ class PreferencesWindowController: NSWindowController {
     }
     
     override func showWindow(_ sender: Any?) {
-        // 每次显示时刷新显示器列表
+        // Refresh display list each time the window is shown
         refreshScreenList()
         super.showWindow(sender)
     }
@@ -40,7 +46,7 @@ class PreferencesWindowController: NSWindowController {
         let contentView = NSView(frame: window.contentView!.bounds)
         contentView.autoresizingMask = [.width, .height]
         
-        // 创建滚动视图
+        // Create scroll view
         scrollView = NSScrollView(frame: contentView.bounds)
         scrollView.autoresizingMask = [.width, .height]
         scrollView.hasVerticalScroller = false
@@ -52,53 +58,53 @@ class PreferencesWindowController: NSWindowController {
     }
     
     private func refreshScreenList() {
-        // 清除旧的配置
+        // Clear old configuration
         screenConfigs.removeAll()
         
-        // 获取当前所有显示器
+        // Get all current displays
         let screens = NSScreen.screens
         
-        // 动态计算所需高度
-        // 说明文本: 25, 窗口移动配置: 60, 按钮: 30, 上下边距: 40, 间距: 20
-        // 每个显示器配置: 100, 分隔线: 1
+        // Dynamically calculate required height
+        // Instruction text: 25, Window move config: 72, Buttons: 30, Top/bottom margins: 40, Spacing: 20
+        // Each display config: 100, Separator: 1
         let instructionHeight: CGFloat = 25
-        let windowMoveConfigHeight: CGFloat = 60
+        let windowMoveConfigHeight: CGFloat = 72
         let buttonHeight: CGFloat = 30
-        let margins: CGFloat = 40  // 上下各 20
+        let margins: CGFloat = 40  // 20 each for top and bottom
         let spacing: CGFloat = 20
         let separatorHeight: CGFloat = 1
         
         var totalHeight = margins + instructionHeight + spacing + windowMoveConfigHeight + spacing + separatorHeight + spacing
         for index in 0..<screens.count {
-            totalHeight += 100  // 配置视图高度
+            totalHeight += 100  // Config view height
             if index < screens.count - 1 {
                 totalHeight += spacing + separatorHeight + spacing
             } else {
                 totalHeight += spacing
             }
         }
-        totalHeight += buttonHeight + 10  // 按钮加一点额外间距
+        totalHeight += buttonHeight + 10  // Buttons with a bit of extra spacing
         
-        // 创建新的文档视图
+        // Create new document view
         let docView = NSView(frame: NSRect(x: 0, y: 0, width: 480, height: totalHeight))
         
-        // 主堆栈视图
+        // Main stack view
         contentStackView = NSStackView()
         contentStackView.orientation = .vertical
         contentStackView.alignment = .left
         contentStackView.spacing = 20
         contentStackView.translatesAutoresizingMaskIntoConstraints = false
         
-        // 添加说明文本
-        let instructionLabel = NSTextField(labelWithString: "为每个显示器配置快捷键：")
+        // Add instruction text
+        let instructionLabel = NSTextField(labelWithString: "Configure hotkeys for each display:")
         instructionLabel.font = .systemFont(ofSize: 13, weight: .medium)
         contentStackView.addArrangedSubview(instructionLabel)
         
-        // 添加窗口移动修饰键配置
+        // Add window move modifier configuration
         let windowMoveConfigView = createWindowMoveConfigView()
         contentStackView.addArrangedSubview(windowMoveConfigView)
         
-        // 添加分隔线
+        // Add separator
         let mainSeparator = NSBox()
         mainSeparator.boxType = .separator
         mainSeparator.translatesAutoresizingMaskIntoConstraints = false
@@ -109,7 +115,7 @@ class PreferencesWindowController: NSWindowController {
             let configView = createScreenConfigView(screen: screen, index: index)
             contentStackView.addArrangedSubview(configView)
             
-            // 添加分隔线（除了最后一个）
+            // Add separator (except for the last one)
             if index < screens.count - 1 {
                 let separator = NSBox()
                 separator.boxType = .separator
@@ -119,16 +125,17 @@ class PreferencesWindowController: NSWindowController {
             }
         }
         
-        // 添加保存按钮
+        // Add save button
         let buttonContainer = NSView()
         buttonContainer.translatesAutoresizingMaskIntoConstraints = false
         
-        let saveButton = NSButton(title: "保存", target: self, action: #selector(saveConfiguration))
+        saveButton = NSButton(title: "Save", target: self, action: #selector(saveConfiguration))
         saveButton.bezelStyle = .rounded
         saveButton.translatesAutoresizingMaskIntoConstraints = false
+        saveButton.isEnabled = false
         buttonContainer.addSubview(saveButton)
         
-        let cancelButton = NSButton(title: "取消", target: self, action: #selector(closeWindow))
+        let cancelButton = NSButton(title: "Cancel", target: self, action: #selector(closeWindow))
         cancelButton.bezelStyle = .rounded
         cancelButton.translatesAutoresizingMaskIntoConstraints = false
         buttonContainer.addSubview(cancelButton)
@@ -158,13 +165,13 @@ class PreferencesWindowController: NSWindowController {
         
         scrollView.documentView = docView
         
-        // 调整窗口大小以适应内容
+        // Adjust window size to fit content
         if let window = window {
             let windowWidth: CGFloat = 520
             let titleBarHeight: CGFloat = 28
             let windowHeight = totalHeight + titleBarHeight
             
-            // 限制最大高度为屏幕的80%
+            // Limit maximum height to 80% of screen height
             let maxHeight = (NSScreen.main?.visibleFrame.height ?? 800) * 0.8
             let finalHeight = min(windowHeight, maxHeight)
             
@@ -179,7 +186,7 @@ class PreferencesWindowController: NSWindowController {
             window.center()
         }
         
-        // 加载已保存的配置
+        // Load saved configuration
         loadConfiguration()
     }
     
@@ -187,13 +194,15 @@ class PreferencesWindowController: NSWindowController {
         let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
         
-        let titleLabel = NSTextField(labelWithString: "窗口移动修饰键：")
+        let titleLabel = NSTextField(labelWithString: "Window Move Modifier:")
         titleLabel.font = .systemFont(ofSize: 12, weight: .regular)
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(titleLabel)
         
         windowMoveModifierPopUp = NSPopUpButton()
         windowMoveModifierPopUp.translatesAutoresizingMaskIntoConstraints = false
+        windowMoveModifierPopUp.target = self
+        windowMoveModifierPopUp.action = #selector(configurationChanged)
         
         for modifier in WindowMoveModifier.allCases {
             windowMoveModifierPopUp.addItem(withTitle: modifier.displayName)
@@ -201,7 +210,7 @@ class PreferencesWindowController: NSWindowController {
         
         container.addSubview(windowMoveModifierPopUp)
         
-        let hintLabel = NSTextField(labelWithString: "按住此键 + 快捷键将移动当前窗口到目标屏幕")
+        let hintLabel = NSTextField(labelWithString: "Hold this key + hotkey to move current window to target screen")
         hintLabel.font = .systemFont(ofSize: 10, weight: .regular)
         hintLabel.textColor = .secondaryLabelColor
         hintLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -210,16 +219,17 @@ class PreferencesWindowController: NSWindowController {
         NSLayoutConstraint.activate([
             titleLabel.topAnchor.constraint(equalTo: container.topAnchor),
             titleLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            titleLabel.heightAnchor.constraint(equalToConstant: 20),
             
-            windowMoveModifierPopUp.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
-            windowMoveModifierPopUp.leadingAnchor.constraint(equalTo: titleLabel.trailingAnchor, constant: 10),
+            windowMoveModifierPopUp.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 6),
+            windowMoveModifierPopUp.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             windowMoveModifierPopUp.widthAnchor.constraint(equalToConstant: 150),
             
-            hintLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 8),
+            hintLabel.topAnchor.constraint(equalTo: windowMoveModifierPopUp.bottomAnchor, constant: 6),
             hintLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             hintLabel.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             
-            container.heightAnchor.constraint(equalToConstant: 60),
+            container.heightAnchor.constraint(equalToConstant: 72),
             container.widthAnchor.constraint(equalToConstant: 460)
         ])
         
@@ -230,21 +240,23 @@ class PreferencesWindowController: NSWindowController {
         let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
         
-        // 显示器名称
+        // Display name
         let nameLabel = NSTextField(labelWithString: screen.displayName)
         nameLabel.font = .systemFont(ofSize: 12, weight: .semibold)
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(nameLabel)
         
-        // 快捷键配置
-        let keyLabel = NSTextField(labelWithString: "按键:")
+        // Hotkey configuration
+        let keyLabel = NSTextField(labelWithString: "Key:")
         keyLabel.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(keyLabel)
         
         let keyPopUp = NSPopUpButton()
         keyPopUp.translatesAutoresizingMaskIntoConstraints = false
+        keyPopUp.target = self
+        keyPopUp.action = #selector(configurationChanged)
         
-        // 添加数字键和字母键选项
+        // Add number and letter key options
         let keys: [(String, Key)] = [
             ("1", .one), ("2", .two), ("3", .three), ("4", .four), ("5", .five),
             ("6", .six), ("7", .seven), ("8", .eight), ("9", .nine), ("0", .zero),
@@ -259,30 +271,30 @@ class PreferencesWindowController: NSWindowController {
             keyPopUp.addItem(withTitle: title)
         }
         
-        // 默认选择数字键
+        // Default to selecting a number key
         if index < 9 {
             keyPopUp.selectItem(at: index)
         }
         
         container.addSubview(keyPopUp)
         
-        // 修饰键
-        let modifierLabel = NSTextField(labelWithString: "修饰键:")
+        // Modifiers
+        let modifierLabel = NSTextField(labelWithString: "Modifiers:")
         modifierLabel.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(modifierLabel)
         
-        let commandCheckbox = NSButton(checkboxWithTitle: "⌘ Command", target: nil, action: nil)
+        let commandCheckbox = NSButton(checkboxWithTitle: "⌘ Command", target: self, action: #selector(configurationChanged))
         commandCheckbox.state = .on
         commandCheckbox.translatesAutoresizingMaskIntoConstraints = false
         
-        let shiftCheckbox = NSButton(checkboxWithTitle: "⇧ Shift", target: nil, action: nil)
+        let shiftCheckbox = NSButton(checkboxWithTitle: "⇧ Shift", target: self, action: #selector(configurationChanged))
         shiftCheckbox.state = .on
         shiftCheckbox.translatesAutoresizingMaskIntoConstraints = false
         
-        let optionCheckbox = NSButton(checkboxWithTitle: "⌥ Option", target: nil, action: nil)
+        let optionCheckbox = NSButton(checkboxWithTitle: "⌥ Option", target: self, action: #selector(configurationChanged))
         optionCheckbox.translatesAutoresizingMaskIntoConstraints = false
         
-        let controlCheckbox = NSButton(checkboxWithTitle: "⌃ Control", target: nil, action: nil)
+        let controlCheckbox = NSButton(checkboxWithTitle: "⌃ Control", target: self, action: #selector(configurationChanged))
         controlCheckbox.translatesAutoresizingMaskIntoConstraints = false
         
         container.addSubview(commandCheckbox)
@@ -327,29 +339,29 @@ class PreferencesWindowController: NSWindowController {
     }
     
     private func loadConfiguration() {
-        // 加载窗口移动修饰键配置
+        // Load window move modifier configuration
         let savedModifier = AppPreferences.windowMoveModifier
         if let index = WindowMoveModifier.allCases.firstIndex(of: savedModifier) {
             windowMoveModifierPopUp.selectItem(at: index)
         }
         
-        // 加载显示器快捷键配置
+        // Load display hotkey configuration
         guard let savedData = UserDefaults.standard.data(forKey: "ScreenHotKeyConfigs"),
               let configs = try? JSONDecoder().decode([ScreenHotKeyConfig].self, from: savedData) else {
             return
         }
         
-        // 根据保存的配置更新 UI
+        // Update UI based on saved configuration
         for config in configs {
             if let index = screenConfigs.firstIndex(where: { $0.screen.displayID == config.displayID }) {
                 let (_, keyPopUp, modifierCheckboxes) = screenConfigs[index]
                 
-                // 设置按键（这里简化处理，实际可能需要更复杂的映射）
+                // Set key (simplified handling, actual implementation may need more complex mapping)
                 if config.keyCode >= 0 && config.keyCode < keyPopUp.numberOfItems {
                     keyPopUp.selectItem(at: config.keyCode)
                 }
                 
-                // 设置修饰键
+                // Set modifier keys
                 let flags = config.hotKeyModifiers
                 modifierCheckboxes[0].state = flags.contains(.command) ? .on : .off
                 modifierCheckboxes[1].state = flags.contains(.shift) ? .on : .off
@@ -360,13 +372,13 @@ class PreferencesWindowController: NSWindowController {
     }
     
     @objc private func saveConfiguration() {
-        // 保存窗口移动修饰键配置
+        // Save window move modifier configuration
         let selectedIndex = windowMoveModifierPopUp.indexOfSelectedItem
         if selectedIndex >= 0 && selectedIndex < WindowMoveModifier.allCases.count {
             AppPreferences.windowMoveModifier = WindowMoveModifier.allCases[selectedIndex]
         }
         
-        // 保存显示器快捷键配置
+        // Save display hotkey configuration
         var configs: [ScreenHotKeyConfig] = []
         
         for (screen, keyPopUp, modifierCheckboxes) in screenConfigs {
@@ -389,15 +401,11 @@ class PreferencesWindowController: NSWindowController {
         if let encoded = try? JSONEncoder().encode(configs) {
             UserDefaults.standard.set(encoded, forKey: "ScreenHotKeyConfigs")
             
-            // 通知 AppDelegate 重新加载快捷键
+            // Notify AppDelegate to reload hotkeys
             NotificationCenter.default.post(name: NSNotification.Name("ReloadHotKeys"), object: nil)
             
-            let alert = NSAlert()
-            alert.messageText = "保存成功"
-            alert.informativeText = "快捷键配置已保存！"
-            alert.alertStyle = .informational
-            alert.addButton(withTitle: "确定")
-            alert.runModal()
+            // Mark as unmodified
+            isDirty = false
         }
         
         close()
@@ -405,5 +413,9 @@ class PreferencesWindowController: NSWindowController {
     
     @objc private func closeWindow() {
         close()
+    }
+    
+    @objc private func configurationChanged() {
+        isDirty = true
     }
 }

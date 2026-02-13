@@ -16,10 +16,10 @@ extension NSScreen {
         
         var tags: [String] = []
         if isBuiltIn {
-            tags.append("内置")
+            tags.append("Built-in")
         }
         if isMain {
-            tags.append("主显示器")
+            tags.append("Main Display")
         }
         
         let tagString = tags.isEmpty ? "" : " [\(tags.joined(separator: ", "))]"
@@ -50,7 +50,7 @@ enum WindowMoveModifier: String, Codable, CaseIterable {
         case .option: return "⌥ Option"
         case .command: return "⌘ Command"
         case .shift: return "⇧ Shift"
-        case .none: return "禁用"
+        case .none: return "Disabled"
         }
     }
     

@@ -135,17 +135,17 @@ class CursorMover {
     }
 
     static func focusWindowAtCursor() {
-        // 1. 获取当前鼠标位置 (CG 坐标系)
+        // 1. Get current cursor position (CG coordinate system)
         let mouseLocation = NSEvent.mouseLocation
-        // 转换到屏幕坐标 (Y 轴翻转，因为 AX 使用的是屏幕坐标)
+        // Convert to screen coordinates (Y-axis flipped, since AX uses screen coordinates)
         let screenHeight = NSScreen.screens[0].frame.height
         let point = CGPoint(x: mouseLocation.x, y: screenHeight - mouseLocation.y)
 
-        // 2. 获取坐标下的系统 UI 元素
+        // 2. Get system UI element at coordinates
         let systemWideElement = AXUIElementCreateSystemWide()
         var element: AXUIElement?
 
-        // 探测该点下的元素
+        // Probe element at point
         let result = AXUIElementCopyElementAtPosition(
             systemWideElement, Float(mouseLocation.x), Float(point.y), &element)
 
@@ -153,10 +153,10 @@ class CursorMover {
             var pid: pid_t = 0
             AXUIElementGetPid(targetElement, &pid)
 
-            // 3. 找到对应的应用并激活
+            // 3. Find and activate corresponding app
             if let app = NSRunningApplication(processIdentifier: pid) {
                 app.activate(options: [.activateIgnoringOtherApps])
-                print("已聚焦窗口: \(app.localizedName ?? "未知")")
+                print("Focused window: \(app.localizedName ?? "Unknown")")
             }
         }
     }
