@@ -1,5 +1,6 @@
 # Mouse Mover
 Move cursor or window to the target screen.
+**MacOS only!**
 
 ## Usage
 ```bash
