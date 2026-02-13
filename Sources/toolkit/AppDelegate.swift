@@ -112,6 +112,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let screens = NSScreen.screens
         guard let targetScreen = screens.first(where: { $0.displayID == displayID }) else { return }
         let frame = targetScreen.frame
+        
+        // 检查是否按下了窗口移动修饰键
+        let windowMoveModifier = AppPreferences.windowMoveModifier
+        if let requiredFlag = windowMoveModifier.eventFlag {
+            let currentFlags = NSEvent.modifierFlags
+            if currentFlags.contains(requiredFlag) && NSEvent.pressedMouseButtons == 0 {
+                // 移动窗口而不是光标
+                moveWindowToScreen(targetScreen)
+                return
+            }
+        }
 
         if NSEvent.pressedMouseButtons == 0 {
             let centerX = frame.origin.x + (frame.size.width / 2)
@@ -160,6 +171,58 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 }
             }
+        }
+    }
+    
+    func moveWindowToScreen(_ targetScreen: NSScreen) {
+        // 获取当前聚焦的窗口
+        guard let frontmostApp = NSWorkspace.shared.frontmostApplication,
+              let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
+            return
+        }
+        
+        // 找到前台应用的主窗口
+        let ownerPID = frontmostApp.processIdentifier
+        
+        for windowInfo in windows {
+            guard let windowPID = windowInfo[kCGWindowOwnerPID as String] as? Int32,
+                  windowPID == ownerPID,
+                  let layer = windowInfo[kCGWindowLayer as String] as? Int,
+                  layer == 0, // 普通窗口层
+                  let bounds = windowInfo[kCGWindowBounds as String] as? [String: CGFloat],
+                  let _ = bounds["X"],
+                  let _ = bounds["Y"],
+                  let _ = bounds["Width"],
+                  let _ = bounds["Height"],
+                  let _ = windowInfo[kCGWindowNumber as String] as? CGWindowID else {
+                continue
+            }
+            
+            // 使用 Accessibility API 移动窗口
+            let element = AXUIElementCreateApplication(ownerPID)
+            var windowList: CFTypeRef?
+            
+            guard AXUIElementCopyAttributeValue(element, kAXWindowsAttribute as CFString, &windowList) == .success,
+                  let windows = windowList as? [AXUIElement],
+                  let targetWindow = windows.first else {
+                continue
+            }
+            
+            // 计算新窗口位置（居中到目标屏幕）
+            let screenFrame = targetScreen.visibleFrame
+            
+            // 设置窗口位置为屏幕可见区域
+            var newPosition = CGPoint(x: screenFrame.origin.x, y: screenFrame.origin.y)
+            let positionValue = AXValueCreate(.cgPoint, &newPosition)!
+            AXUIElementSetAttributeValue(targetWindow, kAXPositionAttribute as CFString, positionValue)
+            
+            // 设置窗口大小为屏幕可见区域大小（最大化效果）
+            var newSize = CGSize(width: screenFrame.width, height: screenFrame.height)
+            let sizeValue = AXValueCreate(.cgSize, &newSize)!
+            AXUIElementSetAttributeValue(targetWindow, kAXSizeAttribute as CFString, sizeValue)
+            
+            // 只处理第一个窗口
+            break
         }
     }
 

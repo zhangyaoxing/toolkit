@@ -7,6 +7,7 @@ class PreferencesWindowController: NSWindowController {
     private var contentStackView: NSStackView!
     private var scrollView: NSScrollView!
     private var screenConfigs: [(screen: NSScreen, keyPopUp: NSPopUpButton, modifierCheckboxes: [NSButton])] = []
+    private var windowMoveModifierPopUp: NSPopUpButton!
     
     override init(window: NSWindow?) {
         let window = NSWindow(
@@ -58,15 +59,16 @@ class PreferencesWindowController: NSWindowController {
         let screens = NSScreen.screens
         
         // 动态计算所需高度
-        // 说明文本: 25, 按钮: 30, 上下边距: 40, 间距: 20
+        // 说明文本: 25, 窗口移动配置: 60, 按钮: 30, 上下边距: 40, 间距: 20
         // 每个显示器配置: 100, 分隔线: 1
         let instructionHeight: CGFloat = 25
+        let windowMoveConfigHeight: CGFloat = 60
         let buttonHeight: CGFloat = 30
         let margins: CGFloat = 40  // 上下各 20
         let spacing: CGFloat = 20
         let separatorHeight: CGFloat = 1
         
-        var totalHeight = margins + instructionHeight + spacing
+        var totalHeight = margins + instructionHeight + spacing + windowMoveConfigHeight + spacing + separatorHeight + spacing
         for index in 0..<screens.count {
             totalHeight += 100  // 配置视图高度
             if index < screens.count - 1 {
@@ -91,6 +93,17 @@ class PreferencesWindowController: NSWindowController {
         let instructionLabel = NSTextField(labelWithString: "为每个显示器配置快捷键：")
         instructionLabel.font = .systemFont(ofSize: 13, weight: .medium)
         contentStackView.addArrangedSubview(instructionLabel)
+        
+        // 添加窗口移动修饰键配置
+        let windowMoveConfigView = createWindowMoveConfigView()
+        contentStackView.addArrangedSubview(windowMoveConfigView)
+        
+        // 添加分隔线
+        let mainSeparator = NSBox()
+        mainSeparator.boxType = .separator
+        mainSeparator.translatesAutoresizingMaskIntoConstraints = false
+        contentStackView.addArrangedSubview(mainSeparator)
+        mainSeparator.widthAnchor.constraint(equalToConstant: 460).isActive = true
         
         for (index, screen) in screens.enumerated() {
             let configView = createScreenConfigView(screen: screen, index: index)
@@ -168,6 +181,49 @@ class PreferencesWindowController: NSWindowController {
         
         // 加载已保存的配置
         loadConfiguration()
+    }
+    
+    private func createWindowMoveConfigView() -> NSView {
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        
+        let titleLabel = NSTextField(labelWithString: "窗口移动修饰键：")
+        titleLabel.font = .systemFont(ofSize: 12, weight: .regular)
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(titleLabel)
+        
+        windowMoveModifierPopUp = NSPopUpButton()
+        windowMoveModifierPopUp.translatesAutoresizingMaskIntoConstraints = false
+        
+        for modifier in WindowMoveModifier.allCases {
+            windowMoveModifierPopUp.addItem(withTitle: modifier.displayName)
+        }
+        
+        container.addSubview(windowMoveModifierPopUp)
+        
+        let hintLabel = NSTextField(labelWithString: "按住此键 + 快捷键将移动当前窗口到目标屏幕")
+        hintLabel.font = .systemFont(ofSize: 10, weight: .regular)
+        hintLabel.textColor = .secondaryLabelColor
+        hintLabel.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(hintLabel)
+        
+        NSLayoutConstraint.activate([
+            titleLabel.topAnchor.constraint(equalTo: container.topAnchor),
+            titleLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            
+            windowMoveModifierPopUp.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
+            windowMoveModifierPopUp.leadingAnchor.constraint(equalTo: titleLabel.trailingAnchor, constant: 10),
+            windowMoveModifierPopUp.widthAnchor.constraint(equalToConstant: 150),
+            
+            hintLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 8),
+            hintLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            hintLabel.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            
+            container.heightAnchor.constraint(equalToConstant: 60),
+            container.widthAnchor.constraint(equalToConstant: 460)
+        ])
+        
+        return container
     }
     
     private func createScreenConfigView(screen: NSScreen, index: Int) -> NSView {
@@ -271,6 +327,13 @@ class PreferencesWindowController: NSWindowController {
     }
     
     private func loadConfiguration() {
+        // 加载窗口移动修饰键配置
+        let savedModifier = AppPreferences.windowMoveModifier
+        if let index = WindowMoveModifier.allCases.firstIndex(of: savedModifier) {
+            windowMoveModifierPopUp.selectItem(at: index)
+        }
+        
+        // 加载显示器快捷键配置
         guard let savedData = UserDefaults.standard.data(forKey: "ScreenHotKeyConfigs"),
               let configs = try? JSONDecoder().decode([ScreenHotKeyConfig].self, from: savedData) else {
             return
@@ -297,6 +360,13 @@ class PreferencesWindowController: NSWindowController {
     }
     
     @objc private func saveConfiguration() {
+        // 保存窗口移动修饰键配置
+        let selectedIndex = windowMoveModifierPopUp.indexOfSelectedItem
+        if selectedIndex >= 0 && selectedIndex < WindowMoveModifier.allCases.count {
+            AppPreferences.windowMoveModifier = WindowMoveModifier.allCases[selectedIndex]
+        }
+        
+        // 保存显示器快捷键配置
         var configs: [ScreenHotKeyConfig] = []
         
         for (screen, keyPopUp, modifierCheckboxes) in screenConfigs {
