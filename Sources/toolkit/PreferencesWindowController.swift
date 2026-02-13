@@ -4,13 +4,14 @@ import HotKey
 @MainActor
 class PreferencesWindowController: NSWindowController {
     
-    private var stackView: NSStackView!
+    private var contentStackView: NSStackView!
+    private var scrollView: NSScrollView!
     private var screenConfigs: [(screen: NSScreen, keyPopUp: NSPopUpButton, modifierCheckboxes: [NSButton])] = []
     
     override init(window: NSWindow?) {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 500, height: 400),
-            styleMask: [.titled, .closable, .resizable],
+            styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
         )
@@ -19,55 +20,88 @@ class PreferencesWindowController: NSWindowController {
         
         super.init(window: window)
         
-        setupUI()
-        loadConfiguration()
+        setupWindowFrame()
     }
     
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
     
-    private func setupUI() {
+    override func showWindow(_ sender: Any?) {
+        // 每次显示时刷新显示器列表
+        refreshScreenList()
+        super.showWindow(sender)
+    }
+    
+    private func setupWindowFrame() {
         guard let window = window else { return }
         
         let contentView = NSView(frame: window.contentView!.bounds)
         contentView.autoresizingMask = [.width, .height]
         
         // 创建滚动视图
-        let scrollView = NSScrollView(frame: contentView.bounds)
+        scrollView = NSScrollView(frame: contentView.bounds)
         scrollView.autoresizingMask = [.width, .height]
-        scrollView.hasVerticalScroller = true
+        scrollView.hasVerticalScroller = false
         scrollView.hasHorizontalScroller = false
         scrollView.borderType = .noBorder
         
-        // 创建文档视图
-        let docView = NSView(frame: NSRect(x: 0, y: 0, width: 480, height: 600))
+        contentView.addSubview(scrollView)
+        window.contentView = contentView
+    }
+    
+    private func refreshScreenList() {
+        // 清除旧的配置
+        screenConfigs.removeAll()
+        
+        // 获取当前所有显示器
+        let screens = NSScreen.screens
+        
+        // 动态计算所需高度
+        // 说明文本: 25, 按钮: 30, 上下边距: 40, 间距: 20
+        // 每个显示器配置: 100, 分隔线: 1
+        let instructionHeight: CGFloat = 25
+        let buttonHeight: CGFloat = 30
+        let margins: CGFloat = 40  // 上下各 20
+        let spacing: CGFloat = 20
+        let separatorHeight: CGFloat = 1
+        
+        var totalHeight = margins + instructionHeight + spacing
+        for index in 0..<screens.count {
+            totalHeight += 100  // 配置视图高度
+            if index < screens.count - 1 {
+                totalHeight += spacing + separatorHeight + spacing
+            } else {
+                totalHeight += spacing
+            }
+        }
+        totalHeight += buttonHeight + 10  // 按钮加一点额外间距
+        
+        // 创建新的文档视图
+        let docView = NSView(frame: NSRect(x: 0, y: 0, width: 480, height: totalHeight))
         
         // 主堆栈视图
-        stackView = NSStackView()
-        stackView.orientation = .vertical
-        stackView.alignment = .left
-        stackView.spacing = 20
-        stackView.translatesAutoresizingMaskIntoConstraints = false
+        contentStackView = NSStackView()
+        contentStackView.orientation = .vertical
+        contentStackView.alignment = .left
+        contentStackView.spacing = 20
+        contentStackView.translatesAutoresizingMaskIntoConstraints = false
         
         // 添加说明文本
         let instructionLabel = NSTextField(labelWithString: "为每个显示器配置快捷键：")
         instructionLabel.font = .systemFont(ofSize: 13, weight: .medium)
-        stackView.addArrangedSubview(instructionLabel)
-        
-        // 获取所有显示器
-        let screens = NSScreen.screens
+        contentStackView.addArrangedSubview(instructionLabel)
         
         for (index, screen) in screens.enumerated() {
             let configView = createScreenConfigView(screen: screen, index: index)
-            stackView.addArrangedSubview(configView)
+            contentStackView.addArrangedSubview(configView)
             
             // 添加分隔线（除了最后一个）
             if index < screens.count - 1 {
                 let separator = NSBox()
                 separator.boxType = .separator
                 separator.translatesAutoresizingMaskIntoConstraints = false
-                stackView.addArrangedSubview(separator)
+                contentStackView.addArrangedSubview(separator)
                 separator.widthAnchor.constraint(equalToConstant: 460).isActive = true
             }
         }
@@ -99,20 +133,41 @@ class PreferencesWindowController: NSWindowController {
             buttonContainer.heightAnchor.constraint(equalToConstant: 30)
         ])
         
-        stackView.addArrangedSubview(buttonContainer)
+        contentStackView.addArrangedSubview(buttonContainer)
         
-        docView.addSubview(stackView)
+        docView.addSubview(contentStackView)
         
         NSLayoutConstraint.activate([
-            stackView.topAnchor.constraint(equalTo: docView.topAnchor, constant: 20),
-            stackView.leadingAnchor.constraint(equalTo: docView.leadingAnchor, constant: 20),
-            stackView.trailingAnchor.constraint(equalTo: docView.trailingAnchor, constant: -20),
+            contentStackView.topAnchor.constraint(equalTo: docView.topAnchor, constant: 20),
+            contentStackView.leadingAnchor.constraint(equalTo: docView.leadingAnchor, constant: 20),
+            contentStackView.trailingAnchor.constraint(equalTo: docView.trailingAnchor, constant: -20),
         ])
         
         scrollView.documentView = docView
-        contentView.addSubview(scrollView)
         
-        window.contentView = contentView
+        // 调整窗口大小以适应内容
+        if let window = window {
+            let windowWidth: CGFloat = 520
+            let titleBarHeight: CGFloat = 28
+            let windowHeight = totalHeight + titleBarHeight
+            
+            // 限制最大高度为屏幕的80%
+            let maxHeight = (NSScreen.main?.visibleFrame.height ?? 800) * 0.8
+            let finalHeight = min(windowHeight, maxHeight)
+            
+            let currentFrame = window.frame
+            let newFrame = NSRect(
+                x: currentFrame.origin.x,
+                y: currentFrame.origin.y + currentFrame.height - finalHeight,
+                width: windowWidth,
+                height: finalHeight
+            )
+            window.setFrame(newFrame, display: true, animate: true)
+            window.center()
+        }
+        
+        // 加载已保存的配置
+        loadConfiguration()
     }
     
     private func createScreenConfigView(screen: NSScreen, index: Int) -> NSView {
